@@ -9,9 +9,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
+using Jellyfin.Plugin.LrcLib.Configuration;
 using Jellyfin.Plugin.LrcLib.Models;
 using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Lyrics;
 using MediaBrowser.Model.Lyrics;
 using MediaBrowser.Model.Providers;
@@ -24,7 +24,6 @@ namespace Jellyfin.Plugin.LrcLib;
 /// </summary>
 public class LrcLibProvider : ILyricProvider
 {
-    private const string BaseUrl = "https://lrclib.net";
     private const string SyncedSuffix = "synced";
     private const string PlainSuffix = "plain";
     private const string SyncedFormat = "lrc";
@@ -43,6 +42,8 @@ public class LrcLibProvider : ILyricProvider
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
+
+    private static string BaseUrl => LrcLibPlugin.Instance?.Configuration.BaseUrl ?? PluginConfiguration.DefaultBaseUrl;
 
     private static bool UseStrictSearch => LrcLibPlugin.Instance?.Configuration.UseStrictSearch ?? true;
 
@@ -90,8 +91,7 @@ public class LrcLibProvider : ILyricProvider
                 Path = $"/api/get/{splitId[0]}"
             };
 
-            var response = await _httpClientFactory.CreateClient(NamedClient.Default)
-                .GetFromJsonAsync<LrcLibSearchResponse>(requestUri.Uri, cancellationToken: cancellationToken)
+            var response = await GetFromApiAsync<LrcLibSearchResponse>(requestUri.Uri, cancellationToken)
                 .ConfigureAwait(false);
             if (response is null)
             {
@@ -148,6 +148,11 @@ public class LrcLibProvider : ILyricProvider
         {
             artist = request.ArtistNames[0];
         }
+        else if (request.AlbumArtistsNames is not null
+            && request.AlbumArtistsNames.Count > 0)
+        {
+            artist = request.AlbumArtistsNames[0];
+        }
         else
         {
             _logger.LogInformation("Artist name is required");
@@ -181,10 +186,7 @@ public class LrcLibProvider : ILyricProvider
             Query = queryStringBuilder.ToString()
         };
 
-        var httpClient = _httpClientFactory.CreateClient(NamedClient.Default);
-
-        var response = await httpClient
-            .GetFromJsonAsync<LrcLibSearchResponse>(requestUri.Uri, cancellationToken: cancellationToken)
+        var response = await GetFromApiAsync<LrcLibSearchResponse>(requestUri.Uri, cancellationToken)
             .ConfigureAwait(false);
         if (response is null)
         {
@@ -214,7 +216,12 @@ public class LrcLibProvider : ILyricProvider
             if (request.ArtistNames is not null
                 && request.ArtistNames.Count > 0)
             {
-                artist = request.ArtistNames[0];
+                artist = string.Join(", ", request.ArtistNames);
+            }
+            else if (request.AlbumArtistsNames is not null
+                && request.AlbumArtistsNames.Count > 0)
+            {
+                artist = string.Join(", ", request.AlbumArtistsNames);
             }
             else
             {
@@ -246,10 +253,7 @@ public class LrcLibProvider : ILyricProvider
             Query = queryStringBuilder.ToString()
         };
 
-        var httpClient = _httpClientFactory.CreateClient(NamedClient.Default);
-
-        var response = await httpClient
-            .GetFromJsonAsync<IReadOnlyList<LrcLibSearchResponse>>(requestUri.Uri, cancellationToken: cancellationToken)
+        var response = await GetFromApiAsync<IReadOnlyList<LrcLibSearchResponse>>(requestUri.Uri, cancellationToken)
             .ConfigureAwait(false);
         if (response is null)
         {
@@ -265,6 +269,22 @@ public class LrcLibProvider : ILyricProvider
         var sortedResults = results.OrderByDescending(x => x.Metadata.IsSynced);
 
         return sortedResults;
+    }
+
+    private async Task<T?> GetFromApiAsync<T>(Uri requestUri, CancellationToken cancellationToken)
+    {
+        using var response = await LrcLibRateLimiter.SendAsync(
+                _httpClientFactory,
+                () => new HttpRequestMessage(HttpMethod.Get, requestUri),
+                _logger,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content
+            .ReadFromJsonAsync<T>(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private List<RemoteLyricInfo> GetRemoteLyrics(LrcLibSearchResponse response)
