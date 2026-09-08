@@ -1,6 +1,6 @@
 name: "LrcLib Lyrics"
 guid: "D106EBE6-9CA8-4FBC-9CD1-A92A213DA9F9"
-version: 4
+version: 5
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 owner: "jellyfin"
@@ -12,6 +12,5 @@ category: "Music"
 artifacts:
   - "Jellyfin.Plugin.LrcLib.dll"
 changelog: |-
-  - Implement rate limiting (#45) @Shadowghost, @crobibero
-  - Prefer artist then album artist (#23) @scampower3, @Shadowghost
-  - Allow configuration of a custom LrcLib server (#42) @dc9dd6aa, @Shadowghost
+  - Unstable: Update to latest Jellyfin preview packages (#36) @crobibero, @jellyfin-bot
+  - Modernize Analyzers and add synced lyric option (#44) @Shadowghost, @crobibero
